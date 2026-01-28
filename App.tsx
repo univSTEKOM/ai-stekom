@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AdFormData, AspectRatio, SceneCount, AdResult, GeneratedScene } from './types';
 import { AdForm } from './components/AdForm';
-import { ResultDisplay } from './components/ResultDisplay.tsx';
+import { ResultDisplay } from './components/ResultDisplay';
 import { generateAdScript, generateSceneImage, generateFullNarration } from './services/geminiService';
+
+declare global {
+  interface AIStudio {
+    hasSelectedApiKey(): Promise<boolean>;
+    openSelectKey(): Promise<void>;
+  }
+}
 
 const App: React.FC = () => {
   const [formData, setFormData] = useState<AdFormData>({
@@ -20,6 +27,38 @@ const App: React.FC = () => {
   const [result, setResult] = useState<AdResult | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
+
+  useEffect(() => {
+    const checkApiStatus = async () => {
+        if (window.aistudio) {
+            const hasKey = await window.aistudio.hasSelectedApiKey();
+            setApiKeyConfigured(hasKey);
+        } else {
+            // If not in the specific environment, assume configured via env vars 
+            // or allow user to try (error will be thrown by service if missing)
+            setApiKeyConfigured(true);
+        }
+    };
+    checkApiStatus();
+  }, []);
+
+  const handleConfigureApiKey = async () => {
+    if (window.aistudio) {
+        try {
+            await window.aistudio.openSelectKey();
+            setApiKeyConfigured(true);
+        } catch (e) {
+            console.error("API Key selection failed", e);
+            // If "Requested entity was not found" error, prompt again
+            if (e instanceof Error && e.message.includes("Requested entity was not found")) {
+                setApiKeyConfigured(false);
+            }
+        }
+    } else {
+        alert("To configure for your server: Please set the 'API_KEY' environment variable in your deployment settings.");
+    }
+  };
 
   const handleReset = () => {
     setResult(null);
@@ -28,6 +67,14 @@ const App: React.FC = () => {
 
   const handleSubmit = async () => {
     if (!formData.productImage) return;
+    
+    // Check API Key state before starting
+    if (window.aistudio && !apiKeyConfigured) {
+        await handleConfigureApiKey();
+        // We assume success after the modal closes per race condition rules, 
+        // but let's return and let user click again or proceed?
+        // Better to proceed if we think it worked.
+    }
 
     setIsGenerating(true);
     setLoadingMessage('INITIALIZING NEURAL NETWORKS...');
@@ -111,7 +158,7 @@ const App: React.FC = () => {
       
     } catch (error) {
       console.error("Main Generation Error:", error);
-      alert("System Error: Neural network unresponsive. Check API Key.");
+      alert("System Error: Neural network unresponsive. Please ensure API KEY is configured correctly.");
       setResult(null);
     } finally {
       setIsGenerating(false);
@@ -144,6 +191,16 @@ const App: React.FC = () => {
            </div>
            
            <div className="hidden md:flex items-center gap-4">
+             {/* API Key Configuration Button */}
+             <button 
+                onClick={handleConfigureApiKey}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-700 hover:border-cyan-500/50 hover:text-cyan-400 transition-all text-xs font-bold text-slate-400"
+                title="Configure Google Gemini API"
+             >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11.536 11 11 9l-2 2H8.5l-2 2H5.5L11 17.5V19l2 2 3.5-3.5A6 6 0 0121 9z"></path></svg>
+                {apiKeyConfigured && window.aistudio ? 'API CONNECTED' : 'CONFIG API'}
+             </button>
+
              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-700">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                 <span className="text-xs text-slate-300 font-mono">SYSTEM ONLINE</span>
@@ -228,6 +285,9 @@ const App: React.FC = () => {
             </div>
             <p className="mt-4 text-[10px] text-slate-600 uppercase tracking-widest">
                 Powered by Google Gemini 2.0 Flash & 3.0 Pro
+            </p>
+             <p className="mt-2 text-[10px] text-slate-700">
+               <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="hover:text-cyan-400 transition-colors">Billing Information</a>
             </p>
         </div>
       </footer>

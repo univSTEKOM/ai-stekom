@@ -192,7 +192,7 @@ export const AdForm: React.FC<AdFormProps> = ({ formData, setFormData, onSubmit,
                 >
                   {VOICE_OPTIONS.map(v => (
                     <option key={v.id} value={v.id} className="bg-slate-900">
-                        {v.name} • {v.gender}
+                        {v.name} • {v.gender} • {v.style}
                     </option>
                   ))}
                 </select>
