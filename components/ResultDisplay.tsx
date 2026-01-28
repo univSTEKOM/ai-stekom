@@ -38,7 +38,8 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = ({ result, onReset })
     const scene = result.scenes[index];
     if (!scene.audioUrl) return;
 
-    const audio = new Audio(`data:audio/mp3;base64,${scene.audioUrl}`);
+    // Use audio/wav because the service now returns a WAV file with headers
+    const audio = new Audio(`data:audio/wav;base64,${scene.audioUrl}`);
     activeAudioRef.current = audio;
     setPlayingSceneId(index);
     
@@ -73,7 +74,7 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = ({ result, onReset })
         return;
       }
 
-      const audio = new Audio(`data:audio/mp3;base64,${scene.audioUrl}`);
+      const audio = new Audio(`data:audio/wav;base64,${scene.audioUrl}`);
       activeAudioRef.current = audio;
       setPlayingSceneId(index);
       

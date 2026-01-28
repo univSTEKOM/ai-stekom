@@ -1,6 +1,13 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { AspectRatio, SceneCount, GeneratedScene } from "../types";
 
+// ---------------------------------------------------------
+// KONFIGURASI API KEY (MANUAL)
+// Paste API Key Google AI Studio Anda di bawah ini:
+// Contoh: const MANUAL_API_KEY = "AIzaSyD-xxxxxxxxxxxxxxxxxxxxxxxx";
+const MANUAL_API_KEY = "AIzaSyARHMkJ_wdnO9S7X-s5Vho61gX8HIupuz8"; 
+// ---------------------------------------------------------
+
 // Helper to convert File to Base64
 export const fileToPart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string } }> => {
   return new Promise((resolve, reject) => {
@@ -24,9 +31,11 @@ export const fileToPart = async (file: File): Promise<{ inlineData: { data: stri
 };
 
 const getClient = () => {
-    const apiKey = process.env.API_KEY;
+    // Prioritas: 1. Environment Variable, 2. Manual Configuration
+    const apiKey = process.env.API_KEY || MANUAL_API_KEY;
+    
     if (!apiKey) {
-        throw new Error("API Key is missing.");
+        throw new Error("API Key belum disetting. Silakan buka file 'services/geminiService.ts' dan isi variabel 'MANUAL_API_KEY' di baris ke-8.");
     }
     return new GoogleGenAI({ apiKey });
 }
@@ -100,7 +109,7 @@ export const generateAdScript = async (
   parts.push({ text: prompt });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview', // Good for complex logic/JSON
+    model: 'gemini-3-pro-preview', // Upgraded to Pro for complex tasks/JSON
     contents: { parts },
     config: {
       responseMimeType: "application/json",
@@ -194,5 +203,77 @@ export const generateFullNarration = async (text: string, voiceName: string): Pr
     throw new Error("No audio generated");
   }
 
-  return audioPart.data;
+  // Convert Raw PCM to WAV
+  const pcmBytes = base64ToUint8Array(audioPart.data);
+  const wavBytes = addWavHeader(pcmBytes, 24000, 1, 16);
+  
+  return uint8ArrayToBase64(wavBytes);
+};
+
+// --- AUDIO UTILITIES ---
+
+const base64ToUint8Array = (base64: string) => {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+const uint8ArrayToBase64 = (bytes: Uint8Array) => {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+const addWavHeader = (pcmData: Uint8Array, sampleRate: number, numChannels: number = 1, bitDepth: number = 16) => {
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+  
+  const dataSize = pcmData.length;
+  
+  // RIFF identifier
+  writeString(view, 0, 'RIFF');
+  // RIFF chunk length
+  view.setUint32(4, 36 + dataSize, true);
+  // RIFF type
+  writeString(view, 8, 'WAVE');
+  // format chunk identifier
+  writeString(view, 12, 'fmt ');
+  // format chunk length
+  view.setUint32(16, 16, true);
+  // sample format (1 = PCM)
+  view.setUint16(20, 1, true);
+  // channel count
+  view.setUint16(22, numChannels, true);
+  // sample rate
+  view.setUint32(24, sampleRate, true);
+  // byte rate (sample rate * block align)
+  view.setUint32(28, sampleRate * numChannels * (bitDepth / 8), true);
+  // block align (channel count * bytes per sample)
+  view.setUint16(32, numChannels * (bitDepth / 8), true);
+  // bits per sample
+  view.setUint16(34, bitDepth, true);
+  // data chunk identifier
+  writeString(view, 36, 'data');
+  // data chunk length
+  view.setUint32(40, dataSize, true);
+  
+  // Combine header and data
+  const wavFile = new Uint8Array(44 + dataSize);
+  wavFile.set(new Uint8Array(header), 0);
+  wavFile.set(pcmData, 44);
+  
+  return wavFile;
+};
+
+const writeString = (view: DataView, offset: number, string: string) => {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
 };

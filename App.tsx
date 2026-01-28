@@ -4,13 +4,6 @@ import { AdForm } from './components/AdForm';
 import { ResultDisplay } from './components/ResultDisplay';
 import { generateAdScript, generateSceneImage, generateFullNarration } from './services/geminiService';
 
-declare global {
-  interface AIStudio {
-    hasSelectedApiKey(): Promise<boolean>;
-    openSelectKey(): Promise<void>;
-  }
-}
-
 const App: React.FC = () => {
   const [formData, setFormData] = useState<AdFormData>({
     productImage: null,
@@ -31,12 +24,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkApiStatus = async () => {
-        if (window.aistudio) {
-            const hasKey = await window.aistudio.hasSelectedApiKey();
+        if ((window as any).aistudio) {
+            const hasKey = await (window as any).aistudio.hasSelectedApiKey();
             setApiKeyConfigured(hasKey);
         } else {
-            // If not in the specific environment, assume configured via env vars 
-            // or allow user to try (error will be thrown by service if missing)
+            // Assume configured if not in AI Studio environment (handled by geminiService fallback)
             setApiKeyConfigured(true);
         }
     };
@@ -44,19 +36,18 @@ const App: React.FC = () => {
   }, []);
 
   const handleConfigureApiKey = async () => {
-    if (window.aistudio) {
+    if ((window as any).aistudio) {
         try {
-            await window.aistudio.openSelectKey();
+            await (window as any).aistudio.openSelectKey();
             setApiKeyConfigured(true);
         } catch (e) {
             console.error("API Key selection failed", e);
-            // If "Requested entity was not found" error, prompt again
             if (e instanceof Error && e.message.includes("Requested entity was not found")) {
                 setApiKeyConfigured(false);
             }
         }
     } else {
-        alert("To configure for your server: Please set the 'API_KEY' environment variable in your deployment settings.");
+        alert("PENGATURAN API KEY:\n\nSilakan buka file 'services/geminiService.ts' dan paste API Key Anda ke dalam variabel 'MANUAL_API_KEY' di baris ke-8.");
     }
   };
 
@@ -68,12 +59,15 @@ const App: React.FC = () => {
   const handleSubmit = async () => {
     if (!formData.productImage) return;
     
-    // Check API Key state before starting
-    if (window.aistudio && !apiKeyConfigured) {
+    // Force prompt if key is definitely missing in supported env
+    if ((window as any).aistudio && !apiKeyConfigured) {
         await handleConfigureApiKey();
-        // We assume success after the modal closes per race condition rules, 
-        // but let's return and let user click again or proceed?
-        // Better to proceed if we think it worked.
+        // Check again after modal potentially closes
+        const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+        if (!hasKey) {
+            return; // Stop if still no key
+        }
+        setApiKeyConfigured(true);
     }
 
     setIsGenerating(true);
@@ -158,7 +152,7 @@ const App: React.FC = () => {
       
     } catch (error) {
       console.error("Main Generation Error:", error);
-      alert("System Error: Neural network unresponsive. Please ensure API KEY is configured correctly.");
+      alert(error instanceof Error ? error.message : "Gagal memproses permintaan. Periksa API Key.");
       setResult(null);
     } finally {
       setIsGenerating(false);
@@ -194,11 +188,17 @@ const App: React.FC = () => {
              {/* API Key Configuration Button */}
              <button 
                 onClick={handleConfigureApiKey}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-700 hover:border-cyan-500/50 hover:text-cyan-400 transition-all text-xs font-bold text-slate-400"
+                className={`
+                    flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-xs font-bold
+                    ${apiKeyConfigured && (window as any).aistudio 
+                        ? 'bg-slate-900/80 border-slate-700 text-slate-400 hover:text-cyan-400' 
+                        : 'bg-yellow-500/10 border-yellow-500 text-yellow-400 animate-pulse shadow-[0_0_15px_rgba(234,179,8,0.2)]'
+                    }
+                `}
                 title="Configure Google Gemini API"
              >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11.536 11 11 9l-2 2H8.5l-2 2H5.5L11 17.5V19l2 2 3.5-3.5A6 6 0 0121 9z"></path></svg>
-                {apiKeyConfigured && window.aistudio ? 'API CONNECTED' : 'CONFIG API'}
+                {apiKeyConfigured && (window as any).aistudio ? 'API CONNECTED' : 'SET API KEY'}
              </button>
 
              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-700">
